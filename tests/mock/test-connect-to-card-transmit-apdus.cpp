@@ -54,8 +54,8 @@ TEST(pcsc_cpp_test, transmitApduSuccess)
 {
     auto card = connectToCard();
 
-    auto command = CommandApdu::fromBytes(PcscMock::DEFAULT_COMMAND_APDU);
-    auto expectedResponse = ResponseApdu::fromBytes(PcscMock::DEFAULT_RESPONSE_APDU);
+    auto command = CardCommandApdu::fromBytes(PcscMock::DEFAULT_COMMAND_APDU);
+    auto expectedResponse = CardResponseApdu::fromBytes(PcscMock::DEFAULT_RESPONSE_APDU);
 
     auto transactionGuard = card->beginTransaction();
     auto response = card->transmit(command);

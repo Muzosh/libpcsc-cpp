@@ -39,7 +39,7 @@ public:
     {
         SCard(EstablishContext, DWORD(SCARD_SCOPE_USER), nullptr, nullptr, &contextHandle);
         if (!contextHandle) {
-            THROW(ScardError,
+            THROW(SCardError,
                   "Context:SCardEstablishContext: service unavailable "
                   "(null context handle)");
         }

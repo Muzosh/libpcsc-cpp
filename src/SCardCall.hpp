@@ -56,17 +56,17 @@ void SCardCall(const char* callerFunctionName, const char* file, int line,
         return;
     case LONG(SCARD_E_NO_SERVICE):
     case LONG(SCARD_E_SERVICE_STOPPED):
-        throw ScardServiceNotRunningError(
+        throw SCardServiceNotRunningError(
             buildErrorMessage(callerFunctionName, scardFunctionName, result, file, line));
     case LONG(SCARD_E_NO_READERS_AVAILABLE):
     case LONG(SCARD_E_READER_UNAVAILABLE):
-        throw ScardNoReadersError(
+        throw SCardNoReadersError(
             buildErrorMessage(callerFunctionName, scardFunctionName, result, file, line));
     case LONG(SCARD_E_NO_SMARTCARD):
 #ifdef _WIN32
     case ERROR_NO_MEDIA_IN_DRIVE:
 #endif // _WIN32
-        throw ScardNoCardError(
+        throw SCardNoCardError(
             buildErrorMessage(callerFunctionName, scardFunctionName, result, file, line));
     case LONG(SCARD_E_NOT_READY):
     case LONG(SCARD_E_INVALID_VALUE):
@@ -75,16 +75,16 @@ void SCardCall(const char* callerFunctionName, const char* file, int line,
 #ifdef _WIN32
     case ERROR_IO_DEVICE:
 #endif // _WIN32
-        throw ScardCardCommunicationFailedError(
+        throw SCardCardCommunicationFailedError(
             buildErrorMessage(callerFunctionName, scardFunctionName, result, file, line));
     case LONG(SCARD_W_REMOVED_CARD):
-        throw ScardCardRemovedError(
+        throw SCardCardRemovedError(
             buildErrorMessage(callerFunctionName, scardFunctionName, result, file, line));
     case LONG(SCARD_E_NOT_TRANSACTED):
-        throw ScardTransactionFailedError(
+        throw SCardTransactionFailedError(
             buildErrorMessage(callerFunctionName, scardFunctionName, result, file, line));
     default:
-        throw ScardError(
+        throw SCardError(
             buildErrorMessage(callerFunctionName, scardFunctionName, result, file, line));
     }
 }

@@ -36,33 +36,33 @@ using namespace std::string_literals;
 #undef LOBYTE
 #endif
 
-constexpr byte_type HIBYTE(size_t w)
+constexpr unsigned char HIBYTE(size_t w)
 {
-    return static_cast<byte_type>((w >> 8) & 0xff);
+    return static_cast<unsigned char>((w >> 8) & 0xff);
 }
-constexpr byte_type LOBYTE(size_t w)
+constexpr unsigned char LOBYTE(size_t w)
 {
-    return static_cast<byte_type>(w & 0xff);
+    return static_cast<unsigned char>(w & 0xff);
 }
 
 namespace
 {
 
-const byte_type DER_SEQUENCE_TYPE_TAG = 0x30;
-const byte_type DER_TWO_BYTE_LENGTH = 0x82;
+const unsigned char DER_SEQUENCE_TYPE_TAG = 0x30;
+const unsigned char DER_TWO_BYTE_LENGTH = 0x82;
 
-class UnexpectedResponseError : public Error
+class UnexpectedResponseError : public SCardError
 {
 public:
-    explicit UnexpectedResponseError(const CommandApdu& command,
+    explicit UnexpectedResponseError(const CardCommandApdu& command,
                                      const byte_vector& expectedResponseBytes,
-                                     const ResponseApdu& response, const char* file, const int line,
-                                     const char* callerFunctionName) :
-        Error("transmitApduWithExpectedResponse(): Unexpected response to command '"s
-              + bytes2hexstr(command.toBytes()) + "' - expected '"s
-              + bytes2hexstr(expectedResponseBytes) + "', got '"s + bytes2hexstr(response.toBytes())
-              + " in " + removeAbsolutePathPrefix(file) + ':' + std::to_string(line) + ':'
-              + callerFunctionName)
+                                     const CardResponseApdu& response, const char* file,
+                                     const int line, const char* callerFunctionName) :
+        SCardError("transmitApduWithExpectedResponse(): Unexpected response to command '"s
+                   + bytes2hexstr(command.toBytes()) + "' - expected '"s
+                   + bytes2hexstr(expectedResponseBytes) + "', got '"s
+                   + bytes2hexstr(response.toBytes()) + " in " + removeAbsolutePathPrefix(file)
+                   + ':' + std::to_string(line) + ':' + callerFunctionName)
     {
     }
 };
@@ -72,7 +72,7 @@ public:
 namespace pcsc_cpp
 {
 
-const byte_vector APDU_RESPONSE_OK {ResponseApdu::OK, 0x00};
+const byte_vector APDU_RESPONSE_OK {CardResponseApdu::OK, 0x00};
 
 std::string bytes2hexstr(const byte_vector& bytes)
 {
@@ -89,11 +89,11 @@ std::string bytes2hexstr(const byte_vector& bytes)
 void transmitApduWithExpectedResponse(const SmartCard& card, const byte_vector& commandBytes,
                                       const byte_vector& expectedResponseBytes)
 {
-    const auto command = CommandApdu::fromBytes(commandBytes);
+    const auto command = CardCommandApdu::fromBytes(commandBytes);
     transmitApduWithExpectedResponse(card, command, expectedResponseBytes);
 }
 
-void transmitApduWithExpectedResponse(const SmartCard& card, const CommandApdu& command,
+void transmitApduWithExpectedResponse(const SmartCard& card, const CardCommandApdu& command,
                                       const byte_vector& expectedResponseBytes)
 {
     const auto response = card.transmit(command);
@@ -108,14 +108,14 @@ size_t readDataLengthFromAsn1(const SmartCard& card)
     // p1 - offset size first byte, 0
     // p2 - offset size second byte, 0
     // le - number of bytes to read, need 4 bytes from start for length
-    const auto readBinary4Bytes = CommandApdu {0x00, 0xb0, 0x00, 0x00, byte_vector(), 0x04};
+    const auto readBinary4Bytes = CardCommandApdu {0x00, 0xb0, 0x00, 0x00, byte_vector(), 0x04};
 
     auto response = card.transmit(readBinary4Bytes);
 
     // Verify expected DER header, first byte must be SEQUENCE.
     if (response.data[0] != DER_SEQUENCE_TYPE_TAG) {
         // TODO: more specific exception
-        THROW(Error,
+        THROW(SCardError,
               "readDataLengthFromAsn1(): First byte must be SEQUENCE (0x30), but is 0x"s
                   + bytes2hexstr({response.data[0]}));
     }
@@ -124,7 +124,7 @@ size_t readDataLengthFromAsn1(const SmartCard& card)
     // Assume 2-byte length, so second byte must be 0x82.
     if (response.data[1] != DER_TWO_BYTE_LENGTH) {
         // TODO: more specific exception
-        THROW(Error,
+        THROW(SCardError,
               "readDataLengthFromAsn1(): Second byte must be two-byte length indicator "s
               "(0x82), but is 0x"s
                   + bytes2hexstr({response.data[1]}));
@@ -134,7 +134,7 @@ size_t readDataLengthFromAsn1(const SmartCard& card)
     const auto length = size_t((response.data[2] << 8) + response.data[3] + 4);
     if (length < 128 || length > 0x0f00) {
         // TODO: more specific exception
-        THROW(Error,
+        THROW(SCardError,
               "readDataLengthFromAsn1(): Unexpected data length in DER header: "s
                   + std::to_string(length));
     }
@@ -147,7 +147,7 @@ byte_vector readBinary(const SmartCard& card, const size_t length, const size_t 
     size_t blockLengthVar = blockLength;
     auto lengthCounter = length;
     auto resultBytes = byte_vector {};
-    auto readBinary = CommandApdu {0x00, 0xb0, 0x00, 0x00};
+    auto readBinary = CardCommandApdu {0x00, 0xb0, 0x00, 0x00};
 
     for (size_t offset = 0; lengthCounter != 0;
          offset += blockLengthVar, lengthCounter -= blockLengthVar) {
@@ -158,7 +158,7 @@ byte_vector readBinary(const SmartCard& card, const size_t length, const size_t 
 
         readBinary.p1 = HIBYTE(offset);
         readBinary.p2 = LOBYTE(offset);
-        readBinary.le = static_cast<byte_type>(blockLengthVar);
+        readBinary.le = static_cast<unsigned char>(blockLengthVar);
 
         auto response = card.transmit(readBinary);
 
@@ -167,7 +167,7 @@ byte_vector readBinary(const SmartCard& card, const size_t length, const size_t 
 
     if (resultBytes.size() != length) {
         // TODO: more specific exception
-        THROW(Error, "readBinary(): Invalid length: "s + std::to_string(resultBytes.size()));
+        THROW(SCardError, "readBinary(): Invalid length: "s + std::to_string(resultBytes.size()));
     }
 
     return resultBytes;

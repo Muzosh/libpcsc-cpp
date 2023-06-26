@@ -57,7 +57,7 @@ inline constexpr uint16_t toSW(byte_type sw1, byte_type sw2)
 }
 
 /** Struct that wraps response APDUs. */
-struct ResponseApdu
+struct CardResponseApdu
 {
     enum Status {
         OK = 0x90,
@@ -78,22 +78,22 @@ struct ResponseApdu
     static const size_t MAX_DATA_SIZE = 256;
     static const size_t MAX_SIZE = MAX_DATA_SIZE + 2; // + sw1 and sw2
 
-    ResponseApdu(byte_type s1, byte_type s2, byte_vector d = {}) :
+    CardResponseApdu(byte_type s1, byte_type s2, byte_vector d = {}) :
         sw1(s1), sw2(s2), data(std::move(d))
     {
     }
 
-    ResponseApdu() = default;
+    CardResponseApdu() = default;
 
-    static ResponseApdu fromBytes(const byte_vector& data)
+    static CardResponseApdu fromBytes(const byte_vector& data)
     {
         if (data.size() < 2) {
-            throw std::invalid_argument("Need at least 2 bytes for creating ResponseApdu");
+            throw std::invalid_argument("Need at least 2 bytes for creating CardResponseApdu");
         }
 
         // SW1 and SW2 are in the end
-        return ResponseApdu {data[data.size() - 2], data[data.size() - 1],
-                             byte_vector {data.cbegin(), data.cend() - 2}};
+        return CardResponseApdu {data[data.size() - 2], data[data.size() - 1],
+                                 byte_vector {data.cbegin(), data.cend() - 2}};
     }
 
     byte_vector toBytes() const
@@ -115,7 +115,7 @@ struct ResponseApdu
 };
 
 /** Struct that wraps command APDUs. */
-struct CommandApdu
+struct CardCommandApdu
 {
     byte_type cla;
     byte_type ins;
@@ -128,34 +128,34 @@ struct CommandApdu
     static const size_t MAX_DATA_SIZE = 255;
     static const unsigned short LE_UNUSED = std::numeric_limits<unsigned short>::max();
 
-    CommandApdu(byte_type c, byte_type i, byte_type pp1, byte_type pp2, byte_vector d = {},
-                unsigned short l = LE_UNUSED) :
+    CardCommandApdu(byte_type c, byte_type i, byte_type pp1, byte_type pp2,
+                    byte_vector d = {}, unsigned short l = LE_UNUSED) :
         cla(c),
         ins(i), p1(pp1), p2(pp2), le(l), data(std::move(d))
     {
     }
 
-    CommandApdu(const CommandApdu& other, byte_vector d) :
+    CardCommandApdu(const CardCommandApdu& other, byte_vector d) :
         cla(other.cla), ins(other.ins), p1(other.p1), p2(other.p2), le(other.le), data(std::move(d))
     {
     }
 
     bool isLeSet() const { return le != LE_UNUSED; }
 
-    static CommandApdu fromBytes(const byte_vector& bytes, bool useLe = false)
+    static CardCommandApdu fromBytes(const byte_vector& bytes, bool useLe = false)
     {
         if (bytes.size() < 4) {
             throw std::invalid_argument("Command APDU must have > 3 bytes");
         }
 
         if (bytes.size() == 4) {
-            return CommandApdu {bytes[0], bytes[1], bytes[2], bytes[3]};
+            return CardCommandApdu {bytes[0], bytes[1], bytes[2], bytes[3]};
         }
 
         if (bytes.size() == 5) {
             if (useLe) {
-                return CommandApdu {bytes[0], bytes[1],      bytes[2],
-                                    bytes[3], byte_vector(), bytes[4]};
+                return CardCommandApdu {bytes[0], bytes[1],      bytes[2],
+                                        bytes[3], byte_vector(), bytes[4]};
             }
             throw std::invalid_argument("Command APDU size 5 is invalid without LE");
         }
@@ -169,15 +169,15 @@ struct CommandApdu
         auto dataStart = bytes.cbegin() + 5;
 
         if (useLe) {
-            return CommandApdu {bytes[0],
-                                bytes[1],
-                                bytes[2],
-                                bytes[3],
-                                byte_vector(dataStart, bytes.cend() - 1),
-                                *(bytes.cend() - 1)};
+            return CardCommandApdu {bytes[0],
+                                    bytes[1],
+                                    bytes[2],
+                                    bytes[3],
+                                    byte_vector(dataStart, bytes.cend() - 1),
+                                    *(bytes.cend() - 1)};
         }
-        return CommandApdu {bytes[0], bytes[1], bytes[2], bytes[3],
-                            byte_vector(dataStart, bytes.cend())};
+        return CardCommandApdu {bytes[0], bytes[1], bytes[2], bytes[3],
+                                byte_vector(dataStart, bytes.cend())};
     }
 
     byte_vector toBytes() const
@@ -195,7 +195,7 @@ struct CommandApdu
 
         if (isLeSet()) {
             // TODO: EstEID spec: the maximum value of Le is 0xFE
-            if (le > ResponseApdu::MAX_DATA_SIZE)
+            if (le > CardResponseApdu::MAX_DATA_SIZE)
                 throw std::invalid_argument("LE larger than response size");
             bytes.push_back(static_cast<byte_type>(le));
         }
@@ -237,8 +237,9 @@ public:
     PCSC_CPP_DISABLE_COPY_MOVE(SmartCard);
 
     TransactionGuard beginTransaction();
-    ResponseApdu transmit(const CommandApdu& command) const;
-    ResponseApdu transmitCTL(const CommandApdu& command, uint16_t lang, uint8_t minlen) const;
+    CardResponseApdu transmit(const CardCommandApdu& command) const;
+    CardResponseApdu transmitCTL(const CardCommandApdu& command, uint16_t lang,
+                                 uint8_t minlen) const;
     bool readerHasPinPad() const;
 
     Protocol protocol() const { return _protocol; }
@@ -290,7 +291,7 @@ private:
 /**
  * Access system smart card readers, entry point to the library.
  *
- * @throw ScardError, SystemError
+ * @throw SCardError, SCardSystemError
  */
 std::vector<Reader> listReaders();
 
@@ -302,7 +303,7 @@ extern const byte_vector APDU_RESPONSE_OK;
 std::string bytes2hexstr(const byte_vector& bytes);
 
 /** Transmit APDU command and verify that expected response is received. */
-void transmitApduWithExpectedResponse(const SmartCard& card, const CommandApdu& command,
+void transmitApduWithExpectedResponse(const SmartCard& card, const CardCommandApdu& command,
                                       const byte_vector& expectedResponseBytes = APDU_RESPONSE_OK);
 void transmitApduWithExpectedResponse(const SmartCard& card, const byte_vector& commandBytes,
                                       const byte_vector& expectedResponseBytes = APDU_RESPONSE_OK);
@@ -316,66 +317,66 @@ byte_vector readBinary(const SmartCard& card, const size_t length, const size_t 
 // Errors.
 
 /** Base class for all pcsc-cpp errors. */
-class Error : public std::runtime_error
+class PcscCppError : public std::runtime_error
 {
 public:
     using std::runtime_error::runtime_error;
 };
 
 /** Programming or system errors. */
-class SystemError : public Error
+class SCardSystemError : public PcscCppError
 {
 public:
-    using Error::Error;
+    using PcscCppError::PcscCppError;
 };
 
 /** Base class for all SCard API errors. */
-class ScardError : public Error
+class SCardError : public PcscCppError
 {
 public:
-    using Error::Error;
+    using PcscCppError::PcscCppError;
 };
 
 /** Thrown when the PC/SC service is not running. */
-class ScardServiceNotRunningError : public ScardError
+class SCardServiceNotRunningError : public SCardError
 {
 public:
-    using ScardError::ScardError;
+    using SCardError::SCardError;
 };
 
 /** Thrown when no card readers are connected to the system. */
-class ScardNoReadersError : public ScardError
+class SCardNoReadersError : public SCardError
 {
 public:
-    using ScardError::ScardError;
+    using SCardError::SCardError;
 };
 
 /** Thrown when no card is connected to the selected reader. */
-class ScardNoCardError : public ScardError
+class SCardNoCardError : public SCardError
 {
 public:
-    using ScardError::ScardError;
+    using SCardError::SCardError;
 };
 
 /** Thrown when communication with the card or reader fails. */
-class ScardCardCommunicationFailedError : public ScardError
+class SCardCardCommunicationFailedError : public SCardError
 {
 public:
-    using ScardError::ScardError;
+    using SCardError::SCardError;
 };
 
 /** Thrown when the card is removed from the selected reader. */
-class ScardCardRemovedError : public ScardError
+class SCardCardRemovedError : public SCardError
 {
 public:
-    using ScardError::ScardError;
+    using SCardError::SCardError;
 };
 
 /** Thrown when the card transaction fails. */
-class ScardTransactionFailedError : public ScardError
+class SCardTransactionFailedError : public SCardError
 {
 public:
-    using ScardError::ScardError;
+    using SCardError::SCardError;
 };
 
 } // namespace pcsc_cpp

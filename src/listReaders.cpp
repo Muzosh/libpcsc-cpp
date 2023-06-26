@@ -151,7 +151,7 @@ std::vector<Reader> listReaders()
             readers.emplace_back(makeReader(ctx, readerState));
         }
         return readers;
-    } catch (const ScardNoReadersError& /* e */) {
+    } catch (const SCardNoReadersError& /* e */) {
         return std::vector<Reader> {};
     }
 }

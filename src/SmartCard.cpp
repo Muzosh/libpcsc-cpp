@@ -53,7 +53,7 @@ inline SmartCard::Protocol convertToSmartCardProtocol(const DWORD protocol)
     case SCARD_PROTOCOL_T1:
         return SmartCard::Protocol::T1;
     default:
-        THROW(Error, "Unsupported card protocol: " + std::to_string(protocol));
+        THROW(SCardError, "Unsupported card protocol: " + std::to_string(protocol));
     }
 }
 
@@ -89,12 +89,13 @@ public:
                   feature.data(), DWORD(feature.size()), &size);
             for (auto p = feature.cbegin(); DWORD(std::distance(feature.cbegin(), p)) < size;) {
                 unsigned int tag = *p++;
+                unsigned int len = *p++;
                 unsigned int value = 0;
-                for (unsigned int i = 0, len = *p++; i < len; ++i)
-                    value |= unsigned(*p++) << 8 * i;
+                for (unsigned int i = 0; i < len; ++i)
+                    value |= (unsigned int)(*p++ << 8) * i;
                 features[DRIVER_FEATURES(tag)] = ntohl(value);
             }
-        } catch (const ScardError&) {
+        } catch (const SCardError&) {
             // Ignore driver errors during card feature requests.
             // TODO: debug(error)
         }
@@ -110,7 +111,11 @@ public:
         }
     }
 
-    PCSC_CPP_DISABLE_COPY_MOVE(CardImpl);
+    // The rule of five (C++ Core guidelines C.21).
+    CardImpl(const CardImpl& other) = delete;
+    CardImpl(CardImpl&& other) noexcept = delete;
+    CardImpl& operator=(const CardImpl& other) = delete;
+    CardImpl& operator=(CardImpl&& other) noexcept = delete;
 
     bool readerHasPinPad() const
     {
@@ -120,9 +125,9 @@ public:
             || features.find(FEATURE_VERIFY_PIN_DIRECT) != features.cend();
     }
 
-    ResponseApdu transmitBytes(const byte_vector& commandBytes) const
+    CardResponseApdu transmitBytes(const byte_vector& commandBytes) const
     {
-        byte_vector responseBytes(ResponseApdu::MAX_SIZE, 0);
+        byte_vector responseBytes(CardResponseApdu::MAX_SIZE, 0);
         auto responseLength = DWORD(responseBytes.size());
 
         // TODO: debug("Sending:  " + bytes2hexstr(commandBytes))
@@ -132,15 +137,15 @@ public:
 
         auto response = toResponse(responseBytes, responseLength);
 
-        if (response.sw1 == ResponseApdu::MORE_DATA_AVAILABLE) {
+        if (response.sw1 == CardResponseApdu::MORE_DATA_AVAILABLE) {
             getMoreResponseData(response);
         }
 
         return response;
     }
 
-    ResponseApdu transmitBytesCTL(const byte_vector& commandBytes, uint16_t lang,
-                                  uint8_t minlen) const
+    CardResponseApdu transmitBytesCTL(const byte_vector& commandBytes, uint16_t lang,
+                                      uint8_t minlen) const
     {
         uint8_t PINFrameOffset = 0;
         uint8_t PINLengthOffset = 0;
@@ -164,7 +169,7 @@ public:
         DWORD ioctl = features.at(features.find(FEATURE_VERIFY_PIN_START) != features.cend()
                                       ? FEATURE_VERIFY_PIN_START
                                       : FEATURE_VERIFY_PIN_DIRECT);
-        byte_vector responseBytes(ResponseApdu::MAX_SIZE, 0);
+        byte_vector responseBytes(CardResponseApdu::MAX_SIZE, 0);
         DWORD responseLength = DWORD(responseBytes.size());
         SCard(Control, cardHandle, ioctl, cmd.data(), DWORD(cmd.size()),
               LPVOID(responseBytes.data()), DWORD(responseBytes.size()), &responseLength);
@@ -190,55 +195,55 @@ private:
     const SCARD_IO_REQUEST _protocol;
     std::map<DRIVER_FEATURES, uint32_t> features;
 
-    ResponseApdu toResponse(byte_vector& responseBytes, size_t responseLength) const
+    CardResponseApdu toResponse(byte_vector& responseBytes, size_t responseLength) const
     {
         if (responseLength > responseBytes.size()) {
-            THROW(Error, "SCardTransmit: received more bytes than buffer size");
+            THROW(SCardError, "SCardTransmit: received more bytes than buffer size");
         }
         responseBytes.resize(responseLength);
 
         // TODO: debug("Received: " + bytes2hexstr(responseBytes))
 
-        auto response = ResponseApdu::fromBytes(responseBytes);
+        auto response = CardResponseApdu::fromBytes(responseBytes);
 
         // Let expected errors through for handling in upper layers or in if blocks below.
         switch (response.sw1) {
-        case ResponseApdu::OK:
-        case ResponseApdu::MORE_DATA_AVAILABLE: // See the if block after next.
-        case ResponseApdu::VERIFICATION_FAILED:
-        case ResponseApdu::VERIFICATION_CANCELLED:
-        case ResponseApdu::WRONG_LENGTH:
-        case ResponseApdu::COMMAND_NOT_ALLOWED:
-        case ResponseApdu::WRONG_PARAMETERS:
-        case ResponseApdu::WRONG_LE_LENGTH: // See next if block.
+        case CardResponseApdu::OK:
+        case CardResponseApdu::MORE_DATA_AVAILABLE: // See the if block after next.
+        case CardResponseApdu::VERIFICATION_FAILED:
+        case CardResponseApdu::VERIFICATION_CANCELLED:
+        case CardResponseApdu::WRONG_LENGTH:
+        case CardResponseApdu::COMMAND_NOT_ALLOWED:
+        case CardResponseApdu::WRONG_PARAMETERS:
+        case CardResponseApdu::WRONG_LE_LENGTH: // See next if block.
             break;
         default:
-            THROW(Error,
-                  "Error response: '" + bytes2hexstr({response.sw1, response.sw2}) + "', protocol "
-                      + std::to_string(protocol()));
+            THROW(SCardError,
+                  "SCardError response: '" + bytes2hexstr({response.sw1, response.sw2})
+                      + "', protocol " + std::to_string(protocol()));
         }
 
-        if (response.sw1 == ResponseApdu::WRONG_LE_LENGTH) {
-            THROW(Error, "Wrong LE length (SW1=0x6C) in response, please set LE");
+        if (response.sw1 == CardResponseApdu::WRONG_LE_LENGTH) {
+            THROW(SCardError, "Wrong LE length (SW1=0x6C) in response, please set LE");
         }
 
         return response;
     }
 
-    void getMoreResponseData(ResponseApdu& response) const
+    void getMoreResponseData(CardResponseApdu& response) const
     {
         byte_vector getResponseCommand {0x00, 0xc0, 0x00, 0x00, 0x00};
 
-        auto newResponse = ResponseApdu(response.sw1, response.sw2);
+        auto newResponse = CardResponseApdu(response.sw1, response.sw2);
 
-        while (newResponse.sw1 == ResponseApdu::MORE_DATA_AVAILABLE) {
+        while (newResponse.sw1 == CardResponseApdu::MORE_DATA_AVAILABLE) {
             getResponseCommand[4] = newResponse.sw2;
             newResponse = transmitBytes(getResponseCommand);
             response.data.insert(response.data.end(), newResponse.data.cbegin(),
                                  newResponse.data.cend());
         }
 
-        response.sw1 = ResponseApdu::OK;
+        response.sw1 = CardResponseApdu::OK;
         response.sw2 = 0;
     }
 };
@@ -281,7 +286,7 @@ bool SmartCard::readerHasPinPad() const
     return card ? card->readerHasPinPad() : false;
 }
 
-ResponseApdu SmartCard::transmit(const CommandApdu& command) const
+CardResponseApdu SmartCard::transmit(const CardCommandApdu& command) const
 {
     REQUIRE_NON_NULL(card)
     if (!transactionInProgress) {
@@ -291,7 +296,8 @@ ResponseApdu SmartCard::transmit(const CommandApdu& command) const
     return card->transmitBytes(command.toBytes());
 }
 
-ResponseApdu SmartCard::transmitCTL(const CommandApdu& command, uint16_t lang, uint8_t minlen) const
+CardResponseApdu SmartCard::transmitCTL(const CardCommandApdu& command, uint16_t lang,
+                                        uint8_t minlen) const
 {
     REQUIRE_NON_NULL(card);
     if (!transactionInProgress) {
