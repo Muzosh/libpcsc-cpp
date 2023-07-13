@@ -1,3 +1,6 @@
+# feature-adapt-serial-abstraction-layer
+This branch provides necessary code changes in this library so the [PQC-web-eid](https://github.com/Muzosh/web-eid-app/tree/feature-abstraction-layer-and-serial-devices) builds successfully.
+
 # libpcsc-cpp
 
 ![European Regional Development Fund](https://github.com/open-eid/DigiDoc4-Client/blob/master/client/images/EL_Regionaalarengu_Fond.png)
